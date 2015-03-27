@@ -106,14 +106,12 @@ static int handle_packet(void *object, int number, uint8_t *data, uint16_t lengt
     case PACKET_ID_SELF_FRIENDSTATUS:
         break;
     case PACKET_ID_SELF_FRIENDNAME:
-        if (length < 5)
+        if ((length -= 1 + crypto_box_PUBLICKEYBYTES) <= 0)
             break;
 
-        int friend_id;
-
-        memcpy(&friend_id, &data[1], 4);
         if (self_c->cb.friend_namechange)
-            self_c->cb.friend_namechange(self_c->callback_object, friend_id, data + 5, length - 5);
+            self_c->cb.friend_namechange(self_c->callback_object, data + 1,
+                                         data + 1 + crypto_box_PUBLICKEYBYTES, length);
         break;
     case PACKET_ID_SELF_FRIENDCHAT:
         break;
@@ -162,22 +160,24 @@ static int handle_new_connections(void *object, New_Connection *n_c)
         connection_data_handler(self_c->net_crypto, id, &handle_packet, self_c, conn_id);
         connection_lossy_data_handler(self_c->net_crypto, id, &handle_lossy_packet, self_c, conn_id);
 
+        /* TODO initial sync */
+
         return 0;
     }
 
     return -1;
 }
 
-void self_connections_sync_friend(Self_Connections *self_c, int friend_id, uint8_t packet_id,
+void self_connections_sync_friend(Self_Connections *self_c, const uint8_t *pk, uint8_t packet_id,
                                   const uint8_t *data, uint32_t data_length)
 {
     uint32_t i;
     int64_t ret;
-    uint8_t msg[sizeof(packet_id) + sizeof(friend_id) + data_length];
+    uint8_t msg[sizeof(packet_id) + crypto_box_PUBLICKEYBYTES + data_length];
 
     msg[0] = packet_id;
-    memcpy(msg + sizeof(packet_id), &friend_id, sizeof(friend_id));
-    memcpy(msg + sizeof(packet_id) + sizeof(friend_id), data, data_length);
+    memcpy(msg + sizeof(packet_id), pk, crypto_box_PUBLICKEYBYTES);
+    memcpy(msg + sizeof(packet_id) + crypto_box_PUBLICKEYBYTES, data, data_length);
 
     for (i = 0; i < SELF_CONN_MAX; ++i) {
         Self_Conn *conn = &self_c->conns[i];

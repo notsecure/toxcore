@@ -58,7 +58,7 @@ typedef struct {
 } Self_Conn;
 
 typedef struct {
-    void (*friend_namechange)(void*, int, const uint8_t*, uint32_t);
+    void (*friend_namechange)(void*, const uint8_t*, const uint8_t*, uint32_t);
     /* other callbacks .. */
 } Self_Callbacks;
 
@@ -73,7 +73,7 @@ typedef struct {
 } Self_Connections;
 
 /* sync information related to a friend */
-void self_connections_sync_friend(Self_Connections *self_c, int friend_id, uint8_t packet_id,
+void self_connections_sync_friend(Self_Connections *self_c, const uint8_t *pk, uint8_t packet_id,
                                   const uint8_t *data, uint32_t data_length);
 
 

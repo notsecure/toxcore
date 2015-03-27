@@ -36,7 +36,9 @@
 #include "util.h"
 
 
-static void friend_namechange(void *object, int i, const uint8_t *data, uint32_t data_length);
+static void friend_namechange(Messenger *m, int i, const uint8_t *data, uint32_t data_length);
+static void friend_namechange_cb(void *object, const uint8_t *pk, const uint8_t *data, uint32_t
+                                 data_length);
 
 static void set_friend_status(Messenger *m, int32_t friendnumber, uint8_t status);
 static int write_cryptpacket_id(const Messenger *m, int32_t friendnumber, uint8_t packet_id, const uint8_t *data,
@@ -1824,7 +1826,7 @@ Messenger *new_messenger(Messenger_Options *options, unsigned int *error)
     m->fr_c = new_friend_connections(m->onion_c);
 
     Self_Callbacks self_cb = {
-        .friend_namechange = &friend_namechange
+        .friend_namechange = &friend_namechange_cb
     };
     m->self_c = new_self_connections(m->net_crypto, &self_cb, m);
 
@@ -1917,10 +1919,8 @@ static int handle_status(void *object, int i, uint8_t status)
     return 0;
 }
 
-static void friend_namechange(void *object, int i, const uint8_t *data, uint32_t data_length)
+static void friend_namechange(Messenger *m, int i, const uint8_t *data, uint32_t data_length)
 {
-    Messenger *m = object;
-
     /* Make sure the NULL terminator is present. */
     uint8_t data_terminated[data_length + 1];
     memcpy(data_terminated, data, data_length);
@@ -1932,6 +1932,18 @@ static void friend_namechange(void *object, int i, const uint8_t *data, uint32_t
 
     memcpy(m->friendlist[i].name, data_terminated, data_length);
     m->friendlist[i].name_length = data_length;
+}
+
+static void friend_namechange_cb(void *object, const uint8_t *pk, const uint8_t *data, uint32_t
+                                 data_length)
+{
+    Messenger *m = object;
+    int32_t i = getfriend_id(m, pk);
+
+    if (i < 0)
+        return;
+
+    friend_namechange(m, i, data, data_length);
 }
 
 static int handle_packet(void *object, int i, uint8_t *temp, uint16_t len)
@@ -1966,7 +1978,8 @@ static int handle_packet(void *object, int i, uint8_t *temp, uint16_t len)
                 break;
 
             friend_namechange(m, i, data, data_length);
-            self_connections_sync_friend(m->self_c, i, PACKET_ID_SELF_FRIENDNAME, data, data_length);
+            self_connections_sync_friend(m->self_c, m->friendlist[i].real_pk, PACKET_ID_SELF_FRIENDNAME,
+                                         data, data_length);
 
             break;
         }

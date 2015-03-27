@@ -36,6 +36,8 @@
 #include "util.h"
 
 
+static void friend_namechange(void *object, int i, const uint8_t *data, uint32_t data_length);
+
 static void set_friend_status(Messenger *m, int32_t friendnumber, uint8_t status);
 static int write_cryptpacket_id(const Messenger *m, int32_t friendnumber, uint8_t packet_id, const uint8_t *data,
                                 uint32_t length, uint8_t congestion_control);
@@ -1821,7 +1823,13 @@ Messenger *new_messenger(Messenger_Options *options, unsigned int *error)
     m->onion_c =  new_onion_client(m->net_crypto);
     m->fr_c = new_friend_connections(m->onion_c);
 
+    Self_Callbacks self_cb = {
+        .friend_namechange = &friend_namechange
+    };
+    m->self_c = new_self_connections(m->net_crypto, &self_cb, m);
+
     if (!(m->onion && m->onion_a && m->onion_c)) {
+        kill_self_connections(m->self_c);
         kill_friend_connections(m->fr_c);
         kill_onion(m->onion);
         kill_onion_announce(m->onion_a);
@@ -1853,6 +1861,7 @@ void kill_messenger(Messenger *m)
 
     uint32_t i;
 
+    kill_self_connections(m->self_c);
     kill_friend_connections(m->fr_c);
     kill_onion(m->onion);
     kill_onion_announce(m->onion_a);
@@ -1908,6 +1917,23 @@ static int handle_status(void *object, int i, uint8_t status)
     return 0;
 }
 
+static void friend_namechange(void *object, int i, const uint8_t *data, uint32_t data_length)
+{
+    Messenger *m = object;
+
+    /* Make sure the NULL terminator is present. */
+    uint8_t data_terminated[data_length + 1];
+    memcpy(data_terminated, data, data_length);
+    data_terminated[data_length] = 0;
+
+    /* inform of namechange before we overwrite the old name */
+    if (m->friend_namechange)
+        m->friend_namechange(m, i, data_terminated, data_length, m->friend_namechange_userdata);
+
+    memcpy(m->friendlist[i].name, data_terminated, data_length);
+    m->friendlist[i].name_length = data_length;
+}
+
 static int handle_packet(void *object, int i, uint8_t *temp, uint16_t len)
 {
     if (len == 0)
@@ -1939,17 +1965,8 @@ static int handle_packet(void *object, int i, uint8_t *temp, uint16_t len)
             if (data_length > MAX_NAME_LENGTH)
                 break;
 
-            /* Make sure the NULL terminator is present. */
-            uint8_t data_terminated[data_length + 1];
-            memcpy(data_terminated, data, data_length);
-            data_terminated[data_length] = 0;
-
-            /* inform of namechange before we overwrite the old name */
-            if (m->friend_namechange)
-                m->friend_namechange(m, i, data_terminated, data_length, m->friend_namechange_userdata);
-
-            memcpy(m->friendlist[i].name, data_terminated, data_length);
-            m->friendlist[i].name_length = data_length;
+            friend_namechange(m, i, data, data_length);
+            self_connections_sync_friend(m->self_c, i, PACKET_ID_SELF_FRIENDNAME, data, data_length);
 
             break;
         }
@@ -2322,6 +2339,7 @@ void do_messenger(Messenger *m)
     do_net_crypto(m->net_crypto);
     do_onion_client(m->onion_c);
     do_friend_connections(m->fr_c);
+    do_self_connections(m->self_c);
     do_friends(m);
     LANdiscovery(m);
     connection_status_cb(m);

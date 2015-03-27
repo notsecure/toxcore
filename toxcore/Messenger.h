@@ -29,6 +29,7 @@
 #include "friend_requests.h"
 #include "LAN_discovery.h"
 #include "friend_connection.h"
+#include "self_connection.h"
 
 #define MAX_NAME_LENGTH 128
 /* TODO: this must depend on other variable. */
@@ -226,6 +227,7 @@ struct Messenger {
     Onion_Client *onion_c;
 
     Friend_Connections *fr_c;
+    Self_Connections *self_c;
 
     Friend_Requests fr;
     uint8_t name[MAX_NAME_LENGTH];
